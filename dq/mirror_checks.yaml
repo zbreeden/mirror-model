@@ -1,0 +1,16 @@
+suite: mirror_ux_dq
+checks:
+  - name: freshness_le_24h
+    table: gold.view_ux_exec_summary
+    rules:
+      - freshness_hours_max: { field: last_refresh_ts, max_hours: 24 }
+
+  - name: guardrails_not_null
+    table: gold.view_ux_exec_summary
+    rules:
+      - not_null: [lcp, cls, inp]
+
+  - name: opportunity_has_sessions
+    table: gold.view_ux_opportunity_table
+    rules:
+      - gt: { field: sessions, value: 0 }

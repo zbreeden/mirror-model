@@ -1,0 +1,26 @@
+id: mirror
+title: The Mirror
+archetype: ux_diagnostics
+chamber: analytics
+scroll_status: germinating
+owner: zach
+stack: [sql, tableau/power_bi, yaml]
+signal_type: ux_scoring_and_prioritization
+triggers: [dashboard_refresh, glossary_update, consent_audit]
+lineage_in: [gold.web_kpi_values, gold.page_stats, glossary.mappings]
+lineage_out: [gold.view_ux_exec_summary, gold.view_ux_opportunity_table, gold.view_ux_backlog]
+metrics:
+  - {name: conversion_rate, role: business_kpi}
+  - {name: lcp, role: guardrail}
+  - {name: cls, role: guardrail}
+  - {name: inp, role: guardrail}
+  - {name: time_to_task, role: ux_outcome}
+  - {name: error_rate, role: quality}
+acceptance_criteria:
+  - "Exec summary shows CVR with LCP/CLS/INP and Owner/Target for top goals"
+  - "Opportunity table flags pages/templates breaching guardrails or high drop-off"
+  - "Backlog scored with RICE or ICE; top 5 items exportable"
+glyph_echoes:
+  - links: [signal_paths, signal, gatekeeper, pulse, loom]
+closure_tag: mirror_unspun
+
