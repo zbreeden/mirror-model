@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Breath Coach — Line Pulse</title>
+  <style>
+    :root{
+      --bg:#071221; --panel:#0e1a30; --grid:#1f2b44; --text:#e6eef7; --muted:#aab4c2;
+      --accent:#22c55e; --accent2:#16a34a; --warn:#f59e0b;
+      --radius:16px;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 80% -10%, #132345 0%, var(--bg) 60%);
+      color:var(--text);
+      font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Inter, Roboto, Arial;
+      display:flex; flex-direction:column; gap:14px;
+    }
+    header{padding:12px 16px 0; text-align:center}
+    h1{margin:0; font-size:18px; font-weight:600; letter-spacing:.2px}
+    main{flex:1; display:grid; place-items:center; padding:0 12px 20px}
+    .card{
+      width:min(900px, 100%);
+      background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
+      border:1px solid #1a2540;
+      border-radius:var(--radius);
+      padding:14px;
+      display:grid; gap:12px;
+    }
+    .canvas-wrap{
+      position:relative; width:100%;
+      border-radius:12px; overflow:hidden;
+      background:var(--panel);
+      border:1px solid #18233d;
+    }
+    canvas{display:block; width:100%; height:220px}
+    .overlay{
+      position:absolute; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center;
+      font-size:14px; color:var(--muted);
+    }
+    .row{display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap}
+    select, button, input[type="number"]{
+      font-size:16px; padding:12px 14px; border-radius:12px;
+      border:1px solid #223055; background:#0a1528; color:var(--text);
+    }
+    label{display:flex; gap:8px; align-items:center}
+    .small{font-size:12px; color:var(--muted)}
+    button.primary{background:linear-gradient(180deg, var(--accent), var(--accent2)); border:none; color:white; font-weight:700; min-width:160px}
+    button.ghost{background:transparent; color:var(--muted)}
+    .stats{display:flex; gap:14px; justify-content:center; font-size:14px; color:var(--muted)}
+    .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+    .warning{color:var(--warn)}
+  </style>
+</head>
+<body>
+  <header><h1>Breath Coach — Line Pulse</h1></header>
+  <main>
+    <section class="card" aria-live="polite">
+      <div class="canvas-wrap">
+        <canvas id="c"></canvas>
+        <div class="overlay" id="overlay">Ready</div>
+      </div>
+
+      <div class="stats">
+        <div id="time">00:00</div>
+        <div>•</div>
+        <div id="breaths">0 breaths</div>
+        <div>•</div>
+        <div id="phase">Phase: —</div>
+      </div>
+
+      <div class="row">
+        <label for="pattern">Pattern</label>
+        <select id="pattern" aria-label="Pattern">
+          <option value="3-0-6-0">3•6</option>
+          <option value="4-4-4-4">Box 4•4•4•4</option>
+          <option value="4-7-8-0">4•7•8</option>
+          <option value="5-0-5-0" selected>Coherent 5•5</option>
+          <option value="custom">Custom…</option>
+        </select>
+
+        <span id="customFields" class="row" style="display:none">
+          <label>In <input id="inD" type="number" min="0" value="4" aria-label="Inhale seconds" /></label>
+          <label>Hold <input id="hold1D" type="number" min="0" value="0" aria-label="First hold seconds" /></label>
+          <label>Out <input id="outD" type="number" min="1" value="6" aria-label="Exhale seconds" /></label>
+          <label>Hold <input id="hold2D" type="number" min="0" value="0" aria-label="Second hold seconds" /></label>
+        </span>
+
+        <button id="start" class="primary">Start</button>
+        <button id="reset" class="ghost">Reset</button>
+        <label><input id="vibe" type="checkbox" /> Haptic</label>
+      </div>
+
+      <div class="small">Tip: Add to Home Screen on iPhone/Android for a one-tap, offline “breath line.”</div>
+      <div class="small warning" id="iosNote" style="display:none">Note: iOS may slightly throttle background timers in Low Power Mode.</div>
+    </section>
+  </main>
+
+  <script>
+    // Canvas setup with DPR scaling
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const timeEl = document.getElementById('time');
+    const breathsEl = document.getElementById('breaths');
+    const phaseEl = document.getElementById('phase');
+
+    const patternSel = document.getElementById('pattern');
+    const customFields = document.getElementById('customFields');
+    const inD = document.getElementById('inD');
+    const hold1D = document.getElementById('hold1D');
+    const outD = document.getElementById('outD');
+    const hold2D = document.getElementById('hold2D');
+
+    const startBtn = document.getElementById('start');
+    const resetBtn = document.getElementById('reset');
+    const vibeChk = document.getElementById('vibe');
+    const iosNote = document.getElementById('iosNote');
+
+    function resize(){
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      drawGrid();
+    }
+    window.addEventListener('resize', resize);
+
+    function drawGrid(){
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      // background
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel');
+      ctx.fillRect(0,0,w,h);
+      // grid
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const gy = 28;
+      for(let y=gy; y<h; y+=gy){ ctx.moveTo(0,y+.5); ctx.lineTo(w,y+.5); }
+      const gx = 40;
+      for(let x=gx; x<w; x+=gx){ ctx.moveTo(x+.5,0); ctx.lineTo(x+.5,h); }
+      ctx.stroke();
+
+      // midline
+      ctx.strokeStyle = 'rgba(255,255,255,.15)';
+      ctx.beginPath();
+      ctx.moveTo(0, h/2 + .5);
+      ctx.lineTo(w, h/2 + .5);
+      ctx.stroke();
+    }
+
+    // Phase schedule
+    let schedule = [];
+    let phaseIdx = -1;
+    let phaseLeft = 0; // seconds left in phase
+    let breathCount = 0;
+    let running = false;
+    let startedAt = 0, elapsed = 0;
+
+    // Drawing state
+    let x = 0;
+    let speedPxPerSec = 140; // horizontal sweep speed
+    let baseline = 0;
+    let peak = 0;
+
+    function buildSchedule(){
+      let vals;
+      if(patternSel.value === 'custom'){
+        customFields.style.display = 'flex';
+        vals = [num(inD), num(hold1D), num(outD), num(hold2D)];
+      }else{
+        customFields.style.display = 'none';
+        vals = patternSel.value.split('-').map(s=>parseInt(s,10));
+      }
+      let [inn,h1,out,h2] = vals;
+      schedule = [];
+      if(inn>0) schedule.push(['Inhale', inn]);
+      if(h1>0) schedule.push(['Hold', h1]);
+      if(out>0) schedule.push(['Exhale', out]);
+      if(h2>0) schedule.push(['Hold', h2]);
+      if(schedule.length===0) schedule = [['Inhale',4], ['Exhale',4]];
+    }
+    function num(el){ return Math.max(0, parseInt(el.value||'0', 10) || 0); }
+
+    function setPhase(name){
+      overlay.textContent = name;
+      phaseEl.textContent = 'Phase: ' + name;
+      if(name === 'Inhale'){ breathCount += 1; }
+      // haptic on transition
+      if(vibeChk.checked && navigator.vibrate){ navigator.vibrate(30); }
+    }
+
+    function formatTime(ms){
+      const s = Math.floor(ms/1000);
+      const mm = String(Math.floor(s/60)).padStart(2,'0');
+      const ss = String(s%60).padStart(2,'0');
+      return mm + ':' + ss;
+    }
+
+    function resetDrawing(){
+      drawGrid();
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      x = 0;
+    }
+
+    function yForPhase(tInPhase, phase){
+      const h = canvas.clientHeight;
+      baseline = h * 0.62;       // resting line
+      const trough = h * 0.72;   // slightly below baseline
+      peak = h * 0.28;           // crest height
+      // Smooth easing
+      const ease = (p)=> 1 - Math.pow(1-p, 2); // quad-out
+      const easeIn = (p)=> p*p;                // quad-in
+
+      if(phase === 'Inhale'){
+        const p = Math.min(1, tInPhase);
+        return baseline - (baseline - peak) * ease(p);
+      }else if(phase === 'Exhale'){
+        const p = Math.min(1, tInPhase);
+        return baseline + (trough - baseline) * easeIn(p);
+      }else{
+        // Hold: keep last point
+        return null;
+      }
+    }
+
+    function step(dt){
+      // dt in seconds
+      elapsed += dt;
+      timeEl.textContent = formatTime(elapsed);
+      breathsEl.textContent = breathCount + (breathCount===1 ? ' breath' : ' breaths');
+
+      // Advance phase time
+      phaseLeft -= dt;
+      if(phaseLeft <= 0){
+        phaseIdx = (phaseIdx + 1) % schedule.length;
+        const [name, secs] = schedule[phaseIdx];
+        phaseLeft = secs;
+        setPhase(name);
+      }
+
+      // Determine current y
+      const [name, secs] = schedule[phaseIdx] || ['Inhale', 4];
+      const tInPhase = Math.max(0, (secs - phaseLeft)) / Math.max(0.0001, secs);
+      let y = yForPhase(tInPhase, name);
+
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+
+      // If hold phase, continue from previous y
+      if(y === null){
+        if(schedule[(phaseIdx - 1 + schedule.length) % schedule.length]){
+          const prev = schedule[(phaseIdx - 1 + schedule.length) % schedule.length][0];
+          if(prev === 'Inhale') y = peak;
+          else if(prev === 'Exhale') y = baseline;
+          else y = baseline;
+        }else{
+          y = baseline;
+        }
+      }
+
+      // Draw segment
+      ctx.strokeStyle = '#2fe07e';
+      ctx.beginPath();
+      ctx.moveTo(x, yPrev);
+      ctx.lineTo(x + speedPxPerSec * dt, y);
+      ctx.stroke();
+
+      x += speedPxPerSec * dt;
+      yPrev = y;
+
+      // When we reach the right edge, clear and continue (oscilloscope sweep)
+      if(x >= w){
+        resetDrawing();
+        ctx.strokeStyle = 'rgba(47,224,126,.3)';
+        ctx.beginPath();
+        ctx.moveTo(0, yPrev);
+        ctx.lineTo(2, yPrev);
+        ctx.stroke();
+      }
+    }
+
+    // Timer using setInterval for iOS reliability
+    let interval = null;
+    let yPrev = 0;
+    function start(){
+      if(running) return;
+      buildSchedule();
+      resetDrawing();
+      breathsEl.textContent = '0 breaths';
+      phaseIdx = -1; phaseLeft = 0; breathCount = 0; elapsed = 0;
+      startedAt = Date.now();
+      running = true;
+      startBtn.textContent = 'Pause';
+      if(vibeChk.checked && navigator.vibrate){ navigator.vibrate(50); }
+      let last = Date.now();
+      interval = setInterval(()=>{
+        const now = Date.now();
+        const dt = Math.min(0.05, (now - last)/1000);
+        last = now;
+        step(dt);
+      }, 16);
+    }
+
+    function pause(){
+      if(!running) return;
+      running = false;
+      startBtn.textContent = 'Start';
+      clearInterval(interval); interval = null;
+    }
+
+    function resetAll(){
+      pause();
+      drawGrid();
+      overlay.textContent = 'Ready';
+      timeEl.textContent = '00:00';
+      breathsEl.textContent = '0 breaths';
+      phaseEl.textContent = 'Phase: —';
+      x = 0; yPrev = canvas.clientHeight * 0.62;
+    }
+
+    startBtn.addEventListener('click', ()=>{
+      if(!running) start(); else pause();
+    });
+    resetBtn.addEventListener('click', resetAll);
+    patternSel.addEventListener('change', ()=>{
+      if(patternSel.value === 'custom') customFields.style.display = 'flex';
+      else customFields.style.display = 'none';
+      if(!running) buildSchedule();
+    });
+    [inD,hold1D,outD,hold2D].forEach(el=> el && el.addEventListener('change', ()=>{ if(!running && patternSel.value==='custom') buildSchedule(); }));
+
+    // iOS note
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints>1);
+    if(isIOS){ iosNote.style.display = 'block'; }
+
+    // init
+    resize();
+    yPrev = canvas.clientHeight * 0.62;
+    overlay.textContent = 'Ready';
+  </script>
+</body>
+</html>
