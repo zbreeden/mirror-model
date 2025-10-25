@@ -1,6 +1,0 @@
-term,value,target,owner,last_refresh_ts
-conversion_rate,0.031,0.035,web_analytics,2025-08-27T18:06:35
-lcp,2.7,2.5,web_perf,2025-08-27T18:06:35
-cls,0.11,0.1,web_perf,2025-08-27T18:06:35
-inp,210.0,200.0,web_perf,2025-08-27T18:06:35
-average_order_value,61.8,65.0,ecommerce_ops,2025-08-27T18:06:35
